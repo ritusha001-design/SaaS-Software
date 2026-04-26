@@ -1,0 +1,244 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile data",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email"]
+    },
+    "Organization": {
+      "title": "Organization",
+      "description": "A company or business entity",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "taxId": { "type": "string", "description": "VAT number or Tax ID" },
+        "currency": { "type": "string", "enum": ["GBP", "USD", "EUR"] },
+        "vatRegistered": { "type": "boolean" },
+        "vatRate": { "type": "number" },
+        "fiscalYearEnd": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "ownerId"]
+    },
+    "Member": {
+      "title": "Organization Member",
+      "description": "Link between User and Organization with role",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "accountant", "staff"] },
+        "email": { "type": "string" }
+      }
+    },
+    "Client": {
+      "title": "Client",
+      "description": "A customer for the organization",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" },
+        "taxId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "An invoice issued to a client",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string" },
+        "clientId": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "issueDate": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "currency": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "sent", "paid", "overdue", "void"] },
+        "subtotal": { "type": "number" },
+        "vatTotal": { "type": "number" },
+        "total": { "type": "number" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "InvoiceItem": {
+      "title": "Invoice Item",
+      "description": "Line item for an invoice",
+      "type": "object",
+      "properties": {
+        "description": { "type": "string" },
+        "quantity": { "type": "number" },
+        "unitPrice": { "type": "number" },
+        "vatRate": { "type": "number" },
+        "total": { "type": "number" }
+      }
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "A business expense",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string" },
+        "category": { "type": "string" },
+        "amount": { "type": "number" },
+        "vatAmount": { "type": "number" },
+        "currency": { "type": "string" },
+        "date": { "type": "string" },
+        "description": { "type": "string" },
+        "receiptUrl": { "type": "string" },
+        "supplier": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "cleared", "void"] },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "Transaction": {
+      "title": "Financial Transaction",
+      "description": "A record of money moving in or out",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string" },
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "amount": { "type": "number" },
+        "date": { "type": "string" },
+        "description": { "type": "string" },
+        "referenceId": { "type": "string", "description": "ID of related invoice or expense" },
+        "category": { "type": "string" }
+      }
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Payment received for an invoice",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string" },
+        "invoiceId": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string" },
+        "method": { "type": "string", "enum": ["stripe", "bank_transfer", "cash", "other"] },
+        "reference": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "Bill": {
+      "title": "Bill",
+      "description": "A bill from a supplier (Accounts Payable)",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string" },
+        "supplier": { "type": "string" },
+        "billNumber": { "type": "string" },
+        "issueDate": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "subtotal": { "type": "number" },
+        "vatTotal": { "type": "number" },
+        "total": { "type": "number" },
+        "status": { "type": "string", "enum": ["unpaid", "paid", "overdue"] },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "VatRecord": {
+      "title": "VAT Record",
+      "description": "A summary of VAT for a specific period",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string" },
+        "periodStart": { "type": "string" },
+        "periodEnd": { "type": "string" },
+        "totalSalesVat": { "type": "number" },
+        "totalPurchaseVat": { "type": "number" },
+        "netVat": { "type": "number" },
+        "status": { "type": "string", "enum": ["draft", "submitted"] },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User notification",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "type": { "type": "string" },
+        "message": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "File": {
+      "title": "File Metadata",
+      "description": "A link to a stored file",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string" },
+        "fileUrl": { "type": "string" },
+        "fileType": { "type": "string" },
+        "relatedId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/users/{userId}/notifications/{notifId}": {
+      "schema": "Notification",
+      "description": "User notifications"
+    },
+    "/organizations/{orgId}": {
+      "schema": "Organization",
+      "description": "Organizations"
+    },
+    "/organizations/{orgId}/members/{memberId}": {
+      "schema": "Member",
+      "description": "Members of an organization"
+    },
+    "/organizations/{orgId}/clients/{clientId}": {
+      "schema": "Client",
+      "description": "Org clients"
+    },
+    "/organizations/{orgId}/invoices/{invoiceId}": {
+      "schema": "Invoice",
+      "description": "Org invoices"
+    },
+    "/organizations/{orgId}/invoices/{invoiceId}/items/{itemId}": {
+      "schema": "InvoiceItem",
+      "description": "Invoice line items"
+    },
+    "/organizations/{orgId}/invoices/{invoiceId}/payments/{paymentId}": {
+      "schema": "Payment",
+      "description": "Payments for an invoice"
+    },
+    "/organizations/{orgId}/expenses/{expenseId}": {
+      "schema": "Expense",
+      "description": "Org expenses"
+    },
+    "/organizations/{orgId}/bills/{billId}": {
+      "schema": "Bill",
+      "description": "Supplier bills"
+    },
+    "/organizations/{orgId}/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Financial transactions"
+    },
+    "/organizations/{orgId}/vat_records/{recordId}": {
+      "schema": "VatRecord",
+      "description": "VAT reports"
+    },
+    "/organizations/{orgId}/files/{fileId}": {
+      "schema": "File",
+      "description": "Stored files"
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "BrightLedger",
+  "description": "Premium SaaS Accounting & Invoicing Platform for modern businesses. Streamline bookkeeping, VAT compliance, and financial intelligence with ease.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}

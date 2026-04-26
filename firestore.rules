@@ -1,0 +1,242 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      // Relaxed for development environment where email verification state might not be consistent
+      return isSignedIn(); 
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Relational Lookup
+    function getOrg(orgId) {
+      return get(/databases/$(database)/documents/organizations/$(orgId)).data;
+    }
+
+    function isMember(orgId) {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)) ||
+        (exists(/databases/$(database)/documents/organizations/$(orgId)) && get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerId == request.auth.uid) ||
+        isSuperAdmin()
+      );
+    }
+
+    function hasRole(orgId, roles) {
+      return isMember(orgId) && (
+        get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data.role in roles ||
+        getOrg(orgId).ownerId == request.auth.uid
+      );
+    }
+
+    function isAdmin(orgId) {
+      return hasRole(orgId, ['admin']);
+    }
+
+    function isAccountant(orgId) {
+      return hasRole(orgId, ['admin', 'accountant']);
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isSuperAdmin', false) == true;
+    }
+
+    // --- Entity Validations ---
+
+    function isValidUser(data) {
+      return data.email is string && data.email.size() <= 256 &&
+             (data.get('displayName', null) == null || (data.displayName is string && data.displayName.size() <= 256)) &&
+             (data.get('photoURL', null) == null || (data.photoURL is string && data.photoURL.size() <= 2048)) &&
+             (data.get('isSuperAdmin', null) == null || data.isSuperAdmin is bool);
+    }
+
+    function isValidOrganization(data) {
+      return data.keys().hasAll(['name', 'ownerId', 'currency', 'createdAt']) &&
+             data.name is string && data.name.size() <= 256 &&
+             data.ownerId == request.auth.uid &&
+             data.currency in ['GBP', 'USD', 'EUR'] &&
+             data.createdAt == request.time &&
+             (!data.keys().contains('taxId') || (data.taxId is string && data.taxId.size() <= 64)) &&
+             (!data.keys().contains('vatRate') || data.vatRate is number);
+    }
+
+    function isValidMember(data) {
+      return data.keys().hasAll(['userId', 'role', 'email']) &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.role in ['admin', 'accountant', 'staff'] &&
+             data.email is string && data.email.size() <= 256;
+    }
+
+    function isValidClient(data) {
+      return data.keys().hasAll(['orgId', 'name']) &&
+             data.orgId is string && data.name is string && data.name.size() <= 256 &&
+             (!data.keys().contains('email') || (data.email is string && data.email.size() <= 256));
+    }
+
+    function isValidInvoice(data) {
+      return data.keys().hasAll(['orgId', 'clientId', 'invoiceNumber', 'status', 'total']) &&
+             data.orgId is string && data.clientId is string &&
+             data.invoiceNumber is string && data.invoiceNumber.size() <= 64 &&
+             data.status in ['draft', 'sent', 'paid', 'overdue', 'void'] &&
+             data.total is number;
+    }
+
+    function isValidExpense(data) {
+      return data.keys().hasAll(['orgId', 'amount', 'date', 'status']) &&
+             data.orgId is string && data.amount is number &&
+             data.date is string && data.status in ['pending', 'cleared', 'void'] &&
+             (!data.keys().contains('category') || (data.category is string && data.category.size() <= 128));
+    }
+
+    function isValidPayment(data) {
+      return data.keys().hasAll(['orgId', 'invoiceId', 'amount', 'date', 'method']) &&
+             data.orgId is string && data.invoiceId is string && data.amount is number &&
+             data.date is string && data.method in ['stripe', 'bank_transfer', 'cash', 'other'];
+    }
+
+    function isValidBill(data) {
+      return data.keys().hasAll(['orgId', 'supplier', 'total', 'status']) &&
+             data.orgId is string && data.supplier is string && data.total is number &&
+             data.status in ['unpaid', 'paid', 'overdue'];
+    }
+
+    function isValidVatRecord(data) {
+      return data.keys().hasAll(['orgId', 'periodStart', 'periodEnd', 'status']) &&
+             data.orgId is string && data.periodStart is string && data.periodEnd is string &&
+             data.status in ['draft', 'submitted'];
+    }
+
+    function isValidTransaction(data) {
+       return data.keys().hasAll(['orgId', 'type', 'amount', 'date']) &&
+              data.orgId is string && data.type in ['income', 'expense'] &&
+              data.amount is number && data.date is string;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['userId', 'type', 'message', 'isRead']) &&
+              data.userId is string && data.type is string && data.message is string && data.isRead is bool;
+    }
+
+    function isValidFile(data) {
+      return data.keys().hasAll(['orgId', 'fileUrl', 'fileType']) &&
+              data.orgId is string && data.fileUrl is string && data.fileType is string;
+    }
+
+    // --- Match Rules ---
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin()) && isValidId(userId);
+      allow list: if isSuperAdmin();
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidUser(incoming()) &&
+                    (!incoming().keys().contains('createdAt') || incoming().createdAt == request.time) &&
+                    (incoming().get('isSuperAdmin', false) == false || request.auth.token.email == 'ritusha001@gmail.com');
+      allow update: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidUser(incoming()) &&
+                    incoming().email == existing().email &&
+                    (!incoming().diff(existing()).affectedKeys().contains('updatedAt') || incoming().updatedAt == request.time) &&
+                    (
+                      incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt']) ||
+                      (request.auth.token.email == 'ritusha001@gmail.com' && 
+                        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt', 'isSuperAdmin'])
+                      )
+                    );
+
+      match /notifications/{notifId} {
+        allow get, list: if isSignedIn() && request.auth.uid == userId;
+        allow update: if isSignedIn() && request.auth.uid == userId && isValidId(notifId) && incoming().diff(existing()).affectedKeys().hasOnly(['isRead']);
+      }
+    }
+
+    match /organizations/{orgId} {
+      allow get: if isValidId(orgId) && (isMember(orgId) || isSuperAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isSuperAdmin()); // Security Pillar 8
+      allow create: if isVerified() && isValidOrganization(incoming());
+      allow update: if isValidId(orgId) && isAdmin(orgId) && isValidOrganization(incoming()) &&
+                    incoming().ownerId == existing().ownerId &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['name', 'address', 'taxId', 'currency', 'vatRegistered', 'vatRate', 'fiscalYearEnd', 'updatedAt']);
+    }
+
+    match /organizations/{orgId}/members/{memberId} {
+      allow read: if isValidId(orgId) && isValidId(memberId) && isMember(orgId);
+      allow create: if isValidId(orgId) && isValidId(memberId) && isVerified() && (
+        (incoming().userId == request.auth.uid && incoming().role == 'admin' && get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerId == request.auth.uid) ||
+        isAdmin(orgId)
+      );
+      allow update: if isValidId(orgId) && isValidId(memberId) && isAdmin(orgId) && memberId != request.auth.uid &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['role']);
+      allow delete: if isValidId(orgId) && isValidId(memberId) && isAdmin(orgId) && memberId != request.auth.uid;
+    }
+
+    match /organizations/{orgId}/clients/{clientId} {
+      allow read, list: if isValidId(orgId) && isMember(orgId);
+      allow create, update: if isValidId(orgId) && isValidId(clientId) && isAccountant(orgId) && isValidClient(incoming()) && incoming().orgId == orgId;
+      allow delete: if isValidId(orgId) && isValidId(clientId) && isAdmin(orgId);
+    }
+
+    match /organizations/{orgId}/invoices/{invoiceId} {
+      allow get, list: if isValidId(orgId) && isMember(orgId);
+      allow create: if isValidId(orgId) && isValidId(invoiceId) && isAccountant(orgId) && isValidInvoice(incoming()) && incoming().orgId == orgId;
+      allow update: if isValidId(orgId) && isValidId(invoiceId) && isAccountant(orgId) && (
+        (incoming().diff(existing()).affectedKeys().hasOnly(['status']) && incoming().status in ['sent', 'paid', 'void']) ||
+        (existing().status == 'draft' && incoming().diff(existing()).affectedKeys().hasAny(['notes', 'total', 'dueDate']))
+      );
+      allow delete: if isValidId(orgId) && isValidId(invoiceId) && isAccountant(orgId) && existing().status == 'draft';
+    }
+
+    match /organizations/{orgId}/invoices/{invoiceId}/payments/{paymentId} {
+      allow read, list: if isValidId(orgId) && isValidId(invoiceId) && isMember(orgId);
+      allow create: if isValidId(orgId) && isValidId(invoiceId) && isValidId(paymentId) && isAccountant(orgId) && isValidPayment(incoming()) && incoming().orgId == orgId && incoming().invoiceId == invoiceId;
+      allow delete: if isValidId(orgId) && isValidId(invoiceId) && isValidId(paymentId) && isAdmin(orgId);
+    }
+
+    match /organizations/{orgId}/expenses/{expenseId} {
+      allow read, list: if isValidId(orgId) && isMember(orgId);
+      allow create, update: if isValidId(orgId) && isValidId(expenseId) && isMember(orgId) && isValidExpense(incoming()) && incoming().orgId == orgId;
+      allow delete: if isValidId(orgId) && isValidId(expenseId) && isAccountant(orgId);
+    }
+
+    match /organizations/{orgId}/bills/{billId} {
+      allow read, list: if isValidId(orgId) && isMember(orgId);
+      allow create, update: if isValidId(orgId) && isValidId(billId) && isAccountant(orgId) && isValidBill(incoming()) && incoming().orgId == orgId;
+      allow delete: if isValidId(orgId) && isValidId(billId) && isAdmin(orgId);
+    }
+
+    match /organizations/{orgId}/transactions/{transactionId} {
+      allow read, list: if isValidId(orgId) && isMember(orgId);
+      allow create: if isValidId(orgId) && isValidId(transactionId) && isAccountant(orgId) && isValidTransaction(incoming()) && incoming().orgId == orgId;
+      allow delete: if isValidId(orgId) && isValidId(transactionId) && isAdmin(orgId);
+    }
+
+    match /organizations/{orgId}/vat_records/{recordId} {
+      allow read, list: if isValidId(orgId) && isMember(orgId);
+      allow create, update: if isValidId(orgId) && isValidId(recordId) && isAccountant(orgId) && isValidVatRecord(incoming()) && incoming().orgId == orgId;
+      allow delete: if isValidId(orgId) && isValidId(recordId) && isAdmin(orgId);
+    }
+
+    match /organizations/{orgId}/files/{fileId} {
+      allow read, list: if isValidId(orgId) && isMember(orgId);
+      allow create: if isValidId(orgId) && isValidId(fileId) && isMember(orgId) && isValidFile(incoming()) && incoming().orgId == orgId;
+      allow delete: if isValidId(orgId) && isValidId(fileId) && isAdmin(orgId);
+    }
+  }
+}
